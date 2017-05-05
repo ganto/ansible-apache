@@ -10,6 +10,39 @@
     - '{{ apache__packages }}'
     - '{{ apache__dependent_packages }}'
 
+# Remove/disable Apache configuration snippets [[[1
+- name: Remove conf-available snippets
+  file:
+    path: '{{ apache__config_path + "/conf-available/" + item.key + ".conf" }}'
+    state: 'absent'
+  when: (item.value.state|d("present") == "absent")
+  with_dict: '{{ apache__combined_snippets }}'
+  tags: [ 'role::apache:vhosts' ]
+
+- name: Divert conf-available configuration
+  command: dpkg-divert --quiet --local
+             --divert {{ ((item.value.divert | d(apache__config_path + "/conf-available/" + (item.value.divert_filename|d(item.key)) + ".conf"))
+                         + item.value.divert_suffix|d(".dpkg-divert")) | quote }}
+             --rename {{ (apache__config_path + "/conf-available/" + item.key + ".conf") | quote }}
+  args:
+    creates: '{{ ( item.value.divert | d(apache__config_path + "/conf-available/" + (item.value.divert_filename|d(item.key)) + ".conf"))
+                 + item.value.divert_suffix|d(".dpkg-divert") }}'
+  when: (item.value.type|d("default") in ["divert"])
+  with_dict: '{{ apache__combined_snippets }}'
+
+- name: Disable configuration snippets
+  file:
+    path: '{{ apache__config_path + "/conf-enabled/" + item.key + ".conf" }}'
+    src: '../conf-available/{{ item.key }}.conf'
+    force: '{{ ansible_check_mode|d() | bool }}'
+    state: 'absent'
+  when: (not (item.value.enabled|d(True)
+              if (item.value is mapping)
+              else item.value|d(True))) or
+        (item.value.state|d("present") == "absent")
+  with_dict: '{{ apache__combined_snippets }}'
+  notify: [ 'Test apache and reload' ]
+
 # Manage Apache modules [[[1
 - name: Get list of available modules
   find:
@@ -26,26 +59,7 @@
 
 - include: apache_module_state.yml
 
-# Manage Apache configuration snippets [[[1
-- name: Divert conf-available configuration
-  command: dpkg-divert --quiet --local
-             --divert {{ ((item.value.divert | d(apache__config_path + "/conf-available/" + (item.value.divert_filename|d(item.key)) + ".conf"))
-                         + item.value.divert_suffix|d(".dpkg-divert")) | quote }}
-             --rename {{ (apache__config_path + "/conf-available/" + item.key + ".conf") | quote }}
-  args:
-    creates: '{{ ( item.value.divert | d(apache__config_path + "/conf-available/" + (item.value.divert_filename|d(item.key)) + ".conf"))
-                 + item.value.divert_suffix|d(".dpkg-divert") }}'
-  when: (item.value.type|d("default") in ["divert"])
-  with_dict: '{{ apache__combined_snippets }}'
-
-- name: Remove conf-available snippets
-  file:
-    path: '{{ apache__config_path + "/conf-available/" + item.key + ".conf" }}'
-    state: 'absent'
-  when: (item.value.state|d("present") == "absent")
-  with_dict: '{{ apache__combined_snippets }}'
-  tags: [ 'role::apache:vhosts' ]
-
+# Enable Apache configuration snippets [[[1
 - name: Create conf-available snippets
   template:
     src: 'etc/apache2/conf-available/{{ "raw" if (item.value.type|d("default") in ["divert", "raw"] and item.value.raw|d()) else item.key }}.conf.j2'
@@ -58,19 +72,20 @@
   with_dict: '{{ apache__combined_snippets }}'
   notify: [ 'Test apache and reload' ]
 
-- name: Enable/disable configuration snippets
+- name: Enable configuration snippets
   file:
     path: '{{ apache__config_path + "/conf-enabled/" + item.key + ".conf" }}'
     src: '../conf-available/{{ item.key }}.conf'
     force: '{{ ansible_check_mode|d() | bool }}'
-    state: '{{ (((item.value.enabled|d(True)
-                  if (item.value is mapping)
-                  else item.value|d(True)))
-                 if (item.value.state|d("present") != "absent")
-                 else False) | bool | ternary("link", "absent") }}'
-  when: (item.value.type|d("default") not in ["divert"])
+    state: 'present'
+  when: (item.value.type|d("default") not in ["divert"]) and
+        ((item.value.enabled|d(True)
+          if (item.value is mapping)
+          else item.value|d(True)) or
+         (item.value.state|d("present") != "absent"))
   with_dict: '{{ apache__combined_snippets }}'
   notify: [ 'Test apache and reload' ]
+
 
 # Manage Apache virtual hosts [[[1
 - name: Divert sites-available configuration
