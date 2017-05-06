@@ -36,10 +36,11 @@
     force: '{{ ansible_check_mode|d() | bool }}'
     state: 'absent'
   when: (item.value.type|d("default") not in ["divert"]) and
-        ((not (item.value.enabled|d(True)
+        ((item.value.state|d("present") == "absent") or
+         (not (item.value.enabled|d(True)
                if (item.value is mapping)
-               else item.value|d(True))) or
-         (item.value.state|d("present") == "absent"))
+               else item.value|d(True))))
+
   with_dict: '{{ apache__combined_snippets }}'
   notify: [ 'Test apache and reload' ]
 
@@ -79,10 +80,11 @@
     force: '{{ ansible_check_mode|d() | bool }}'
     state: 'link'
   when: (item.value.type|d("default") not in ["divert"]) and
+        (item.value.state|d("present") != "absent") and
         ((item.value.enabled|d(True)
           if (item.value is mapping)
-          else item.value|d(True)) or
-         (item.value.state|d("present") != "absent"))
+          else item.value|d(True)))
+
   with_dict: '{{ apache__combined_snippets }}'
   notify: [ 'Test apache and reload' ]
 
