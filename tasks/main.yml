@@ -33,13 +33,13 @@
 - name: Disable configuration snippets
   file:
     path: '{{ apache__config_path + "/conf-enabled/" + item.key + ".conf" }}'
-    src: '../conf-available/{{ item.key }}.conf'
     force: '{{ ansible_check_mode|d() | bool }}'
     state: 'absent'
-  when: (not (item.value.enabled|d(True)
-              if (item.value is mapping)
-              else item.value|d(True))) or
-        (item.value.state|d("present") == "absent")
+  when: (item.value.type|d("default") not in ["divert"]) and
+        ((not (item.value.enabled|d(True)
+               if (item.value is mapping)
+               else item.value|d(True))) or
+         (item.value.state|d("present") == "absent"))
   with_dict: '{{ apache__combined_snippets }}'
   notify: [ 'Test apache and reload' ]
 
@@ -77,7 +77,7 @@
     path: '{{ apache__config_path + "/conf-enabled/" + item.key + ".conf" }}'
     src: '../conf-available/{{ item.key }}.conf'
     force: '{{ ansible_check_mode|d() | bool }}'
-    state: 'present'
+    state: 'link'
   when: (item.value.type|d("default") not in ["divert"]) and
         ((item.value.enabled|d(True)
           if (item.value is mapping)
