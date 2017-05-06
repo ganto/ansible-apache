@@ -27,21 +27,22 @@
   args:
     creates: '{{ ( item.value.divert | d(apache__config_path + "/conf-available/" + (item.value.divert_filename|d(item.key)) + ".conf"))
                  + item.value.divert_suffix|d(".dpkg-divert") }}'
+  register: apache__register_conf_diverted
   when: (item.value.type|d("default") in ["divert"])
   with_dict: '{{ apache__combined_snippets }}'
 
 - name: Disable configuration snippets
   file:
-    path: '{{ apache__config_path + "/conf-enabled/" + item.key + ".conf" }}'
+    path: '{{ apache__config_path + "/conf-enabled/" + item.item.key + ".conf" }}'
     force: '{{ ansible_check_mode|d() | bool }}'
     state: 'absent'
-  when: (item.value.type|d("default") not in ["divert"]) and
-        ((item.value.state|d("present") == "absent") or
-         (not (item.value.enabled|d(True)
-               if (item.value is mapping)
-               else item.value|d(True))))
-
-  with_dict: '{{ apache__combined_snippets }}'
+  when: ((item.item.value.type|d("default") == "divert") and
+         (item | changed)) or
+        ((item.item.value.state|d("present") == "absent") or
+         (not (item.item.value.enabled|d(True)
+               if (item.item.value is mapping)
+               else item.item.value|d(True))))
+  with_items: '{{ apache__register_conf_diverted.results }}'
   notify: [ 'Test apache and reload' ]
 
 # Manage Apache modules [[[1
@@ -84,10 +85,8 @@
         ((item.value.enabled|d(True)
           if (item.value is mapping)
           else item.value|d(True)))
-
   with_dict: '{{ apache__combined_snippets }}'
   notify: [ 'Test apache and reload' ]
-
 
 # Manage Apache virtual hosts [[[1
 - name: Divert sites-available configuration
